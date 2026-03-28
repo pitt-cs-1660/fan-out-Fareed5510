@@ -7,11 +7,11 @@ s3 = boto3.client('s3')
 
 def lambda_handler(event, context):
     """
-    extracts metadata from S3 upload events received via SNS.
+    It extracts metadata from S3 upload events received via SNS.
     logs file information to CloudWatch and writes a JSON metadata
     file to the processed/metadata/ prefix in the same bucket.
 
-    event structure (SNS wraps the S3 event):
+    event structure in which SNS wraps the S3 event:
     {
         "Records": [{
             "Sns": {
@@ -26,7 +26,7 @@ def lambda_handler(event, context):
         [METADATA] Size: {size} bytes
         [METADATA] Upload Time: {timestamp}
 
-    required S3 output:
+    the required S3 output:
         writes a JSON file to processed/metadata/{filename}.json containing:
         {
             "file": "{key}",
@@ -38,24 +38,45 @@ def lambda_handler(event, context):
 
     print("=== metadata extractor invoked ===")
 
-    # todo: loop through event['Records']
-    # todo: for each record, get the SNS message string from record['Sns']['Message']
-    # todo: parse the SNS message string as JSON to get the S3 event
-    # todo: loop through the S3 event's 'Records'
-    # todo: extract bucket name from s3_record['s3']['bucket']['name']
-    # todo: extract object key from s3_record['s3']['object']['key']
-    # todo: extract file size from s3_record['s3']['object']['size']
-    # todo: extract event time from s3_record['eventTime']
-    # todo: print metadata in the required [METADATA] format:
-    #       print(f"[METADATA] File: {key}")
-    #       print(f"[METADATA] Bucket: {bucket}")
-    #       print(f"[METADATA] Size: {size} bytes")
-    #       print(f"[METADATA] Upload Time: {event_time}")
-    # todo: build a metadata dict with file, bucket, size, upload_time
-    # todo: get the filename from the key (e.g. "uploads/test.jpg" -> "test")
-    #       hint: use os.path.splitext(key.split('/')[-1])[0]
-    # todo: write the metadata dict as JSON to s3 at processed/metadata/{filename}.json
-    #       hint: s3.put_object(Bucket=bucket, Key=f"processed/metadata/{filename}.json",
-    #             Body=json.dumps(metadata), ContentType='application/json')
+    # Parse the SNS wrapper to get the actual S3 event
+    for record in event['Records']:
+        sns_message = record['Sns']['Message']
+        # SNS Message is a JSON string, we need to parse it
+        s3_event = json.loads(sns_message)
+        
+        # Now we process each S3 upload event
+        for s3_record in s3_event['Records']:
+            bucket = s3_record['s3']['bucket']['name']
+            key = s3_record['s3']['object']['key']
+            size = s3_record['s3']['object']['size']
+            event_time = s3_record['eventTime']
+            
+            # Log metadata in required format for CloudWatch
+            print(f"[METADATA] File: {key}")
+            print(f"[METADATA] Bucket: {bucket}")
+            print(f"[METADATA] Size: {size} bytes")
+            print(f"[METADATA] Upload Time: {event_time}")
+            
+            # Build metadata object for JSON output
+            metadata = {
+                "file": key,
+                "bucket": bucket,
+                "size": size,
+                "upload_time": event_time
+            }
+            
+            # Extract filename without extension (e.g., "test.jpg" -> "test")
+            filename = key.split('/')[-1]
+            filename_no_ext = os.path.splitext(filename)[0]
+            
+            # Write metadata JSON to processed/metadata/ prefix
+            s3.put_object(
+                Bucket=bucket,
+                Key=f"processed/metadata/{filename_no_ext}.json",
+                Body=json.dumps(metadata),
+                ContentType='application/json'
+            )
+            
+            print(f"[METADATA] Wrote metadata to processed/metadata/{filename_no_ext}.json")
 
     return {'statusCode': 200, 'body': 'metadata extracted'}
